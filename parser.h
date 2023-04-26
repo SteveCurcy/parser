@@ -13,7 +13,7 @@
 
 #include <iostream>
 #include <vector>
-#include "optional.h"
+#include "arg_impl.h"
 
 class parser {
     class remover {
@@ -34,14 +34,17 @@ class parser {
 
     parser &operator=(parser &&) = default;
 
-    argument *find_option_by_small_name(const std::string &small_name_);
+    argument *find_option_by_name(const std::string &name_);
+
+    argument *find_position_by_name(const std::string &name_);
 
     static parser *instance;
     static remover remover;
 
     std::string m_prog;
-    optional<bool> m_helper;
+    arg_impl<bool> m_helper;
     std::vector<argument *> m_options;
+    std::vector<argument *> m_positions;
 
 public:
 
@@ -70,9 +73,18 @@ parser::~parser() {
     }
 }
 
-argument *parser::find_option_by_small_name(const std::string &small_name_) {
+argument *parser::find_option_by_name(const std::string &name_) {
     for (auto *arg: m_options) {
-        if (arg->is_this(small_name_)) {
+        if (arg->is_this(name_)) {
+            return arg;
+        }
+    }
+    return nullptr;
+}
+
+argument *parser::find_position_by_name(const std::string &name_) {
+    for (auto *arg: m_positions) {
+        if (arg->is_this(name_)) {
             return arg;
         }
     }
@@ -96,52 +108,78 @@ void parser::parse(int argc_, char **argv_, const std::string &prog_) {
         return;
     }
 
+    argument *arg_ = nullptr;
     for (int i = 1; i < argc_; i++) {
         if (argv_[i][0] == '-') {
             if (m_helper.is_this(argv_[i])) {
                 show_help();
                 exit(0);
             }
-            argument *arg_ = find_option_by_small_name(argv_[i]);
+            arg_ = find_option_by_name(argv_[i]);
             if (nullptr == arg_) {
                 std::cout << argv_[i][1] << std::endl;
-                throw std::runtime_error("未知的参数：-" + std::string(argv_[i]));
+                throw std::runtime_error("未知的参数：" + std::string(argv_[i]));
             }
 
             // 短名字，如果不是 bool 类型，则看参数的值
             if (arg_->get_type() == ARG_BOOL) {
-                auto *opt = (optional<bool> *) arg_;
+                auto *opt = (arg_impl<bool> *) arg_;
                 opt->set(true);
                 continue;
             }
-            i++;
-            if (i >= argc_) {
-                throw std::runtime_error(
-                        std::string(argv_[i - 1]) + " 需要一个 " + argument::types[arg_->get_type()] + " 参数输入！");
+        } else {
+            arg_ = find_position_by_name(argv_[i]);
+            if (nullptr == arg_) {
+                std::cout << argv_[i][1] << std::endl;
+                throw std::runtime_error("未知的参数：" + std::string(argv_[i]));
             }
-            switch (arg_->get_type()) {
-                case ARG_INT:
-                    try {
-                        ((optional<int> *) arg_)->set(std::stoi(argv_[i]));
-                    } catch (std::invalid_argument &e) {
-                        throw std::runtime_error(((optional<int> *) arg_)->get_var_name() + " 需要一个 int 类型的参数！");
-                    }
-                    break;
-                case ARG_STRING:
-                    ((optional<std::string> *) arg_)->set(argv_[i]);
-                    break;
-            }
+        }
+        i++;
+        if (i >= argc_) {
+            throw std::runtime_error(
+                    std::string(argv_[i - 1]) + " 需要一个 " + argument::types[arg_->get_type()] + " 参数输入！");
+        }
+        switch (arg_->get_type()) {
+            case ARG_BOOL:
+                if (std::string(argv_[i]) != "true" && std::string(argv_[i]) != "false") {
+                    throw std::runtime_error(((arg_impl<int> *) arg_)->get_var_name() + " 的值只能为 true 或 false！");
+                }
+                ((arg_impl<bool> *) arg_)->set(argv_[i][0] == 't');
+                break;
+            case ARG_INT:
+                try {
+                    ((arg_impl<int> *) arg_)->set(std::stoi(argv_[i]));
+                } catch (std::invalid_argument &e) {
+                    throw std::runtime_error(((arg_impl<int> *) arg_)->get_var_name() + " 需要一个 int 类型的参数！");
+                }
+                break;
+            case ARG_STRING:
+                ((arg_impl<std::string> *) arg_)->set(argv_[i]);
+                break;
+        }
+    }
+
+    for (auto *pos: m_positions) {
+        if (!pos->has_set()) {
+            throw std::runtime_error(pos->get_var_name() + " 必须传入值！请使用 -h 或 --help 查看帮助！");
         }
     }
 }
 
 void parser::show_help() {
     std::cout << "Usage: " << m_prog;
+    for (auto *pos_: m_positions) {
+        pos_->show_usage();
+    }
     m_helper.show_usage();
     for (auto *opt_: m_options) {
         opt_->show_usage();
     }
-    std::cout << std::endl << std::endl << "optional" << std::endl;
+    std::cout << std::endl << std::endl << "positional" << std::endl;
+    for (auto *pos_: m_positions) {
+        pos_->show_help();
+    }
+    std::cout << std::endl << "optional" << std::endl;
     m_helper.show_help();
     for (auto *opt_: m_options) {
         opt_->show_help();
@@ -154,7 +192,7 @@ void parser::add_argument(const std::string &small_name_, const std::string &ful
     if (small_name_ == "-h" || full_name_ == "--help") {
         throw std::runtime_error("help 选项参数不能被替换，请选用其他字母和单词");
     }
-    argument *new_arg = new optional<Val>(small_name_, full_name_, desc_);
+    argument *new_arg = new arg_impl<Val>(small_name_, full_name_, desc_);
     m_options.emplace_back(new_arg);
 }
 
@@ -167,13 +205,19 @@ void parser::add_argument(const std::string &arg_name_, const std::string &desc_
 
         argument *new_arg = nullptr;
         if (typeid(Val) != typeid(void *)) {
-            new_arg = new optional<Val>("", arg_name_, desc_);
+            new_arg = new arg_impl<Val>("", arg_name_, desc_);
         } else {
-            new_arg = new optional<bool>("", arg_name_, desc_);
+            new_arg = new arg_impl<bool>("", arg_name_, desc_);
         }
         m_options.emplace_back(new_arg);
     } else if (arg_name_[0] != '-') {
-        // positional argument
+        argument *new_arg = nullptr;
+        if (typeid(Val) != typeid(void *)) {
+            new_arg = new arg_impl<Val>("", arg_name_, desc_);
+        } else {
+            new_arg = new arg_impl<std::string>("", arg_name_, desc_);
+        }
+        m_positions.emplace_back(new_arg);
     } else {
         throw std::runtime_error("以 --xxxx 的形式传入参数全名");
     }
@@ -194,7 +238,13 @@ Val &parser::get(const std::string &var_name_) {
 
     for (auto *arg_: m_options) {
         if (type_ == arg_->get_type() && arg_->get_var_name() == var_name_) {
-            auto *opt = (optional<Val> *) arg_;
+            auto *opt = (arg_impl<Val> *) arg_;
+            return opt->get();
+        }
+    }
+    for (auto *arg_: m_positions) {
+        if (type_ == arg_->get_type() && arg_->get_var_name() == var_name_) {
+            auto *opt = (arg_impl<Val> *) arg_;
             return opt->get();
         }
     }

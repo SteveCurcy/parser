@@ -21,6 +21,7 @@ extern constexpr int ARG_STRING = 2;
 class argument {
 protected:
     int m_var_type = ARG_BOOL;
+    bool f_is_set = false;
     std::string m_var_name; // 参数对应变量的名称
     std::string m_full_name; // 参数的完整名字，如 --help，但只记录 help
     std::string m_description;  // 对参数的描述
@@ -38,6 +39,10 @@ public:
     }
 
     const std::string &get_var_name() const;
+
+    bool has_set() const {
+        return f_is_set;
+    }
 
     argument(const std::string &arg_name_, const std::string &description_) :
             m_full_name(arg_name_), m_description(description_) {}

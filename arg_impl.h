@@ -15,17 +15,17 @@
 #include "argument.h"
 
 template<typename T = bool>
-class optional : public argument {
+class arg_impl : public argument {
     T m_value;
     std::string m_small_name;
 public:
 
-    optional(const std::string &small_name_, const std::string &full_name_,
+    arg_impl(const std::string &small_name_, const std::string &full_name_,
              const std::string &description_);
 
-    optional() = default;
+    arg_impl() = default;
 
-    ~optional() override = default;
+    ~arg_impl() override = default;
 
     void show_usage() override;
 
@@ -39,7 +39,7 @@ public:
 };
 
 template<typename T>
-optional<T>::optional(const std::string &small_name_, const std::string &full_name_,
+arg_impl<T>::arg_impl(const std::string &small_name_, const std::string &full_name_,
                       const std::string &description_) :
         m_small_name(small_name_), argument(full_name_, description_) {
 
@@ -53,11 +53,11 @@ optional<T>::optional(const std::string &small_name_, const std::string &full_na
         throw std::runtime_error("当前只支持 bool, int, std::string。");
     }
 
-    m_var_name = full_name_.substr(2);
+    m_var_name = full_name_[0] == '-' ? full_name_.substr(2) : full_name_;
 }
 
 template<typename T>
-void optional<T>::show_usage() {
+void arg_impl<T>::show_usage() {
     std::cout << " [";
     if (!m_small_name.empty()) {
         std::cout << m_small_name;
@@ -73,7 +73,7 @@ void optional<T>::show_usage() {
 }
 
 template<typename T>
-void optional<T>::show_help() {
+void arg_impl<T>::show_help() {
     std::string help_msg_ = m_small_name;
     if (!m_small_name.empty()) {
         help_msg_ += ", " + m_full_name + (m_var_type != ARG_BOOL ? " " + utils::to_upper(m_var_name) : "");
@@ -103,18 +103,19 @@ void optional<T>::show_help() {
 }
 
 template<typename T>
-bool optional<T>::is_this(const std::string &arg_name_) {
+bool arg_impl<T>::is_this(const std::string &arg_name_) {
     return (arg_name_ == m_small_name) || (arg_name_ == m_full_name);
 }
 
 template<typename T>
-T &optional<T>::get() {
+T &arg_impl<T>::get() {
     return m_value;
 }
 
 template<typename T>
-void optional<T>::set(const T &t) {
+void arg_impl<T>::set(const T &t) {
     m_value = t;
+    f_is_set = true;
 }
 
 #endif //ARGS_PARSER_OPTIONAL_ARG_H
