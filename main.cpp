@@ -1,9 +1,19 @@
 #include <iostream>
-#include "args.h"
+#include "parser.h"
 
 int main(int argc, char *argv[]) {
-    auto arg = parser::args("help", "show this help text", parser::TYPE_INT);
-    std::cout << int(arg.get()) << std::endl;
-    arg.show_help();
+    auto p = parser::parser::get_instance(argc, argv);
+    // 设置一个位置参数，并设置参数对应变量的名称
+    p.add_argument(nullptr, "goddess", "testing goddess", parser::TYPE_INT, "god");
+    // 设置一个可选的 bool 型参数
+    p.add_argument("-t", "--test", "testing option", parser::TYPE_BOOL);
+    p.parse();
+    // 支持进行隐式类型转换
+    float fresult = p["god"];
+    int iresult = p["god"];
+    bool bresult = p["god"];
+    std::string sresult = p["test"];
+    std::cout << p["test"] << std::endl;
+    std::cout << fresult << ", " << iresult << ", " << bresult << ", " << sresult << std::endl;
     return 0;
 }
